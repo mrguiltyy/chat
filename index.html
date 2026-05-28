@@ -3,20 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat Bridge Beta</title>
+    <title>Cross-Platform Live Chat</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         :root {
-            --bg: #1e1e24;
-            --card: #2a2b36;
-            --accent: #5865F2;
-            --text: #f2f3f5;
-            --muted: #949ba4;
+            --bg-dark: #121214;
+            --card-bg: #1a1a1e;
+            --accent-blue: #5865F2;
+            --text-main: #f2f3f5;
+            --text-muted: #949ba4;
         }
 
         body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -24,141 +25,172 @@
             margin: 0;
         }
 
-        .container {
-            background-color: var(--card);
+        .chat-container {
+            background-color: var(--card-bg);
             padding: 25px;
-            border-radius: 8px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
             width: 100%;
-            max-width: 450px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            max-width: 480px;
+            border: 1px solid #2e2e36;
         }
 
-        .field {
+        h2 {
+            margin-top: 0;
+            font-size: 20px;
+            text-align: center;
+            border-bottom: 1px solid #2e2e36;
+            padding-bottom: 15px;
+        }
+
+        .messages-window {
+            height: 320px;
+            overflow-y: auto;
+            background-color: #111214;
+            padding: 15px;
+            border-radius: 6px;
             margin-bottom: 15px;
+            border: 1px solid #222428;
         }
 
-        label {
-            display: block;
-            font-size: 12px;
-            text-transform: uppercase;
-            color: var(--muted);
-            margin-bottom: 5px;
+        .msg-line {
+            margin-bottom: 12px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            object-fit: cover;
+            background-color: var(--accent-blue);
+        }
+
+        .msg-body {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .username {
             font-weight: bold;
+            font-size: 14px;
+            color: #7289da;
+            margin-bottom: 2px;
         }
 
-        input, textarea {
+        .text {
+            font-size: 14px;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+
+        .input-row {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        input {
             width: 100%;
             padding: 10px;
-            background: #111214;
-            border: 1px solid #202225;
-            border-radius: 4px;
-            color: white;
+            background-color: #111214;
+            border: 1px solid #222428;
+            border-radius: 6px;
+            color: var(--text-main);
+            font-size: 14px;
             box-sizing: border-box;
         }
 
-        input:focus, textarea:focus {
-            outline: 1px solid var(--accent);
+        input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
         }
 
         button {
             width: 100%;
             padding: 12px;
-            background-color: var(--accent);
+            background-color: var(--accent-blue);
             color: white;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
+            font-size: 15px;
             font-weight: bold;
             cursor: pointer;
+            transition: background 0.2s;
         }
 
         button:hover {
             background-color: #4752c4;
         }
-
-        #status {
-            margin-top: 15px;
-            text-align: center;
-            font-size: 14px;
-            font-weight: 500;
-        }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2 style="margin-top:0; text-align:center;">Discord Bridge Beta</h2>
+<div class="chat-container">
+    <h2>Live Website-to-Discord Bridge</h2>
+    <div class="messages-window" id="chatWindow"></div>
     
-    <div class="field">
-        <label>Paste Discord Webhook URL</label>
-        <input type="text" id="webhook" placeholder="https://discord.com/api/webhooks/...">
+    <div class="input-row">
+        <input type="text" id="usernameInput" placeholder="Your Name" value="Web Guest">
+        <input type="text" id="pfpInput" placeholder="Optional: Paste Custom Avatar URL">
+        <input type="text" id="msgInput" placeholder="Type a message..." onkeydown="if(event.key === 'Enter') sendMsg()">
+        <button onclick="sendMsg()">Send Message</button>
     </div>
-
-    <div class="field">
-        <label>Custom Name</label>
-        <input type="text" id="username" value="Zayden">
-    </div>
-
-    <div class="field">
-        <label>Custom Avatar URL</label>
-        <input type="text" id="avatar" placeholder="https://...">
-    </div>
-
-    <div class="field">
-        <label>Message</label>
-        <textarea id="message" rows="3" placeholder="Type a message..."></textarea>
-    </div>
-
-    <button onclick="sendMessage()">Send to Discord</button>
-    <div id="status"></div>
 </div>
 
 <script>
-async function sendMessage() {
-    const webhookUrl = document.getElementById('webhook').value.trim();
-    const username = document.getElementById('username').value.trim();
-    const avatarUrl = document.getElementById('avatar').value.trim();
-    const text = document.getElementById('message').value.trim();
-    const status = document.getElementById('status');
+    // BACKEND CONNECTION SETUP:
+    // When testing on your PC, keep it as 'http://localhost:3000'
+    // Once you host your backend on Render/Railway, swap this URL to your backend application URL link!
+    const BACKEND_URL = 'http://localhost:3000';
+    const socket = io(BACKEND_URL); 
 
-    if (!webhookUrl || !text) {
-        status.innerText = "❌ Missing Webhook URL or Message";
-        status.style.color = "#f23f43";
-        return;
-    }
+    const chatWindow = document.getElementById('chatWindow');
 
-    const payload = { content: text };
-    if (username) payload.username = username;
-    if (avatarUrl) payload.avatar_url = avatarUrl;
+    // Receive incoming chats FROM Discord
+    socket.on('discord-to-web', (data) => {
+        appendMessage(data.username, data.avatar, data.text, false);
+    });
 
-    try {
-        status.innerText = "Sending...";
-        status.style.color = var(--muted);
+    // Send chats TO Discord
+    function sendMsg() {
+        const name = document.getElementById('usernameInput').value.trim() || 'Web Guest';
+        const customPfp = document.getElementById('pfpInput').value.trim();
+        const text = document.getElementById('msgInput').value.trim();
+        
+        if (!text) return;
 
-        // Explicitly handling the request options to bypass standard browser restrictions
-        const response = await fetch(webhookUrl, {
-            method: 'POST',
-            mode: 'cors', 
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload)
+        const pfp = customPfp || 'https://i.imgur.com/AfFp7pu.png';
+
+        // Fire the message out over the websocket
+        socket.emit('web-to-discord', {
+            username: name,
+            avatar: pfp,
+            text: text
         });
 
-        // Discord webhooks return a 244 No Content on success
-        if (response.ok || response.status === 204) {
-            status.innerText = "🚀 Sent successfully!";
-            status.style.color = "#23a55a";
-            document.getElementById('message').value = ""; // Clear message box
-        } else {
-            status.innerText = `❌ Error: ${response.status}`;
-            status.style.color = "#f23f43";
-        }
-    } catch (err) {
-        status.innerText = "❌ Connection Failed. Check your URL.";
-        status.style.color = "#f23f43";
-        console.error(err);
+        // Instantly display your own message on your screen locally
+        appendMessage(name, pfp, text, true);
+        document.getElementById('msgInput').value = '';
     }
-}
+
+    function appendMessage(user, avatarImg, messageText, isSelf) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'msg-line';
+        
+        msgDiv.innerHTML = `
+            <img class="avatar" src="${avatarImg}" onerror="this.src='https://i.imgur.com/AfFp7pu.png'">
+            <div class="msg-body">
+                <span class="username" style="${isSelf ? 'color: #23a55a;' : ''}">${user}</span>
+                <span class="text">${messageText}</span>
+            </div>
+        `;
+        
+        chatWindow.appendChild(msgDiv);
+        chatWindow.scrollTop = chatWindow.scrollHeight; // Keep chat scrolled down
+    }
 </script>
 
 </body>
