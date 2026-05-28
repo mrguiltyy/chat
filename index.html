@@ -1,51 +1,165 @@
-const express = require('express');
-const axios = require('axios');
-const app = express();
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Bridge Beta</title>
+    <style>
+        :root {
+            --bg: #1e1e24;
+            --card: #2a2b36;
+            --accent: #5865F2;
+            --text: #f2f3f5;
+            --muted: #949ba4;
+        }
 
-app.use(express.json());
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
 
-// Replace this with your actual Discord Webhook URL
-const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN';
+        .container {
+            background-color: var(--card);
+            padding: 25px;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 450px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
 
-app.post('/api/send-message', async (req, res) => {
-    try {
-        // 1. Get the message text and user identifier from the request
-        const { text, userSession } = req.body;
+        .field {
+            margin-bottom: 15px;
+        }
 
-        // 2. Fetch the user's current website profile details
-        // (In a real app, you'd fetch this from your database using their session)
-        const userProfile = await fetchUserProfileFromDB(userSession); 
-        
-        // Dynamic fallback values if the user hasn't set up a profile picture yet
-        const username = userProfile.nickname || 'Web Guest';
-        const avatarUrl = userProfile.pfpUrl || 'https://i.imgur.com/AfFp7pu.png'; 
+        label {
+            display: block;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
 
-        // 3. Construct the payload for the Discord Webhook
-        const webhookPayload = {
-            username: username,          // This overrides the Webhook's default name
-            avatar_url: avatarUrl,       // This overrides the Webhook's default picture
-            content: text                // The actual chat message
-        };
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            background: #111214;
+            border: 1px solid #202225;
+            border-radius: 4px;
+            color: white;
+            box-sizing: border-box;
+        }
 
-        // 4. Send the POST request directly to Discord
-        await axios.post(DISCORD_WEBHOOK_URL, webhookPayload);
+        input:focus, textarea:focus {
+            outline: 1px solid var(--accent);
+        }
 
-        return res.status(200).json({ success: true, message: 'Message mirrored to Discord!' });
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+        }
 
-    } catch (error) {
-        console.error('Error forwarding message:', error);
-        return res.status(500).json({ success: false, error: 'Internal Server Error' });
+        button:hover {
+            background-color: #4752c4;
+        }
+
+        #status {
+            margin-top: 15px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="margin-top:0; text-align:center;">Discord Bridge Beta</h2>
+    
+    <div class="field">
+        <label>Paste Discord Webhook URL</label>
+        <input type="text" id="webhook" placeholder="https://discord.com/api/webhooks/...">
+    </div>
+
+    <div class="field">
+        <label>Custom Name</label>
+        <input type="text" id="username" value="Zayden">
+    </div>
+
+    <div class="field">
+        <label>Custom Avatar URL</label>
+        <input type="text" id="avatar" placeholder="https://...">
+    </div>
+
+    <div class="field">
+        <label>Message</label>
+        <textarea id="message" rows="3" placeholder="Type a message..."></textarea>
+    </div>
+
+    <button onclick="sendMessage()">Send to Discord</button>
+    <div id="status"></div>
+</div>
+
+<script>
+async function sendMessage() {
+    const webhookUrl = document.getElementById('webhook').value.trim();
+    const username = document.getElementById('username').value.trim();
+    const avatarUrl = document.getElementById('avatar').value.trim();
+    const text = document.getElementById('message').value.trim();
+    const status = document.getElementById('status');
+
+    if (!webhookUrl || !text) {
+        status.innerText = "❌ Missing Webhook URL or Message";
+        status.style.color = "#f23f43";
+        return;
     }
-});
 
-// Mock function representing your database lookup
-async function fetchUserProfileFromDB(session) {
-    // This is where you grab their registered nickname, avatar URL, etc.
-    return {
-        nickname: "Zayden",
-        pfpUrl: "https://yourwebsite.com/assets/avatars/user123.jpg",
-        createdAt: "2026-05-28" // Can be stored for web-side use, but Discord webhooks ignore this
-    };
+    const payload = { content: text };
+    if (username) payload.username = username;
+    if (avatarUrl) payload.avatar_url = avatarUrl;
+
+    try {
+        status.innerText = "Sending...";
+        status.style.color = var(--muted);
+
+        // Explicitly handling the request options to bypass standard browser restrictions
+        const response = await fetch(webhookUrl, {
+            method: 'POST',
+            mode: 'cors', 
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload)
+        });
+
+        // Discord webhooks return a 244 No Content on success
+        if (response.ok || response.status === 204) {
+            status.innerText = "🚀 Sent successfully!";
+            status.style.color = "#23a55a";
+            document.getElementById('message').value = ""; // Clear message box
+        } else {
+            status.innerText = `❌ Error: ${response.status}`;
+            status.style.color = "#f23f43";
+        }
+    } catch (err) {
+        status.innerText = "❌ Connection Failed. Check your URL.";
+        status.style.color = "#f23f43";
+        console.error(err);
+    }
 }
+</script>
 
-app.listen(3000, () => console.log('Server running on port 3000'));
+</body>
+</html>
